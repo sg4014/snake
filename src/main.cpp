@@ -12,8 +12,8 @@ public:
         top, bottom, left, right,
     };
 
-    explicit Snake(float speed, sf::Vector2f position = { 0, 0 })
-        : m_speed{ speed }
+    explicit Snake(float speed = 50, sf::Vector2f position = { 0, 0 })
+        : m_velocity{ sf::Vector2f{0.f, -speed}}
     {
         m_shape.setOrigin(m_shape.getGeometricCenter());
         m_shape.setPosition(position);
@@ -34,24 +34,23 @@ public:
         if (direction != m_direction)
         {
             m_direction = direction;
-            m_velocity = getUpdatedVelocity(direction);
+            m_velocity = getUpdatedVelocity();
         }
     }
 
 private:
     sf::RectangleShape m_shape{ { 40, 40 } };
     Direction          m_direction{};
-    float              m_speed{};
     sf::Vector2f       m_velocity{};
 
-    sf::Vector2f getUpdatedVelocity(Direction direction) const
+    sf::Vector2f getUpdatedVelocity() const
     {
-        switch (direction)
+        switch (m_direction)
         {
-        case top:    return { 0.f, m_speed };
-        case bottom: return { 0.f, -m_speed };
-        case left:   return { -m_speed, 0.f };
-        case right:  return { m_speed, 0.f };
+        case top:    return { 0.f, -m_velocity.length() };
+        case bottom: return { 0.f, m_velocity.length() };
+        case left:   return { -m_velocity.length(), 0.f };
+        case right:  return { m_velocity.length(), 0.f };
         default:
             throw std::out_of_range(
                 "Impossible enumerator encountered."
@@ -71,7 +70,7 @@ int main()
     auto window = sf::RenderWindow(sf::VideoMode({ WIDTH, HEIGHT }), "Snake");
 
     // Snake
-    constexpr float speed{ 50.f }; // pixels per second
+    constexpr float speed{ 120.f }; // pixels per second
     Snake           snake{ speed, { WIDTH / 2.f, HEIGHT / 2.f } };
 
     // Clock
@@ -89,14 +88,32 @@ int main()
             }
             else if (const auto* keyPressed{ event->getIf<sf::Event::KeyPressed>() })
             {
-                if (keyPressed->scancode == sf::Keyboard::Scancode::Escape)
+                using enum sf::Keyboard::Scancode;
+
+                switch (keyPressed->scancode)
+                {
+                case Escape:
                     window.close();
+                    break;
+                case W:
+                    snake.setDirection(Snake::top);
+                    break;
+                case A:
+                    snake.setDirection(Snake::left);
+                    break;
+                case S:
+                    snake.setDirection(Snake::bottom);
+                    break;
+                case D:
+                    snake.setDirection(Snake::right);
+                    break;
+                default:;
+                }
             }
         }
 
         // Clear and Update
         window.clear(sf::Color::Black);
-
         update(clock.reset(), snake);
 
         // Draw and display
@@ -108,5 +125,4 @@ int main()
 void update(Clock::Seconds dt, Snake& snake)
 {
     snake.move(dt);
-    // square.setPosition(square.getPosition() + dt.count() * velocity);
 }
