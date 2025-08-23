@@ -4,7 +4,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <array>
-#include <utility>
+#include <vector>
+#include <deque>
 
 // TODO: spawn a yellow circle in some cell
 // TODO: make the snake grow when it eats a yellow circle
@@ -56,44 +57,68 @@ public:
 
     explicit Snake(sf::Vector2f position)
     {
-        m_shape.setFillColor(sf::Color::Red);
-        m_shape.setPosition(position);
+        m_segments.emplace_front(position);
     }
 
     void drawIn(sf::RenderWindow& window) const
     {
-        window.draw(m_shape);
+        for (const auto& segment: m_segments)
+            segment.drawIn(window);
     }
 
     void setMoveDirection(MoveDirection dir) { m_moveDirection = dir; }
 
     void move()
     {
-        m_shape.setPosition(m_shape.getPosition() + getDelta());
+        // 1. Add a new head to the snake
+        m_segments.emplace_front(getHeadPosition() + getDelta());
+        // 2. Delete the last segment of the tail
+        m_segments.pop_back();
     }
 
     void grow()
     {
-
+        //m_segments.push_back(getBasicShape());
     }
 
-    [[nodiscard]] sf::Vector2f getPosition() const
+    [[nodiscard]] sf::Vector2f getHeadPosition() const
     {
-        return m_shape.getPosition();
+        return m_segments.front().getPosition();
     }
 
 private:
-    MoveDirection      m_moveDirection{ right };
-    sf::RectangleShape m_shape{ { Grid::cellSide, Grid::cellSide } };
+    class Segment
+    {
+    public:
+        explicit Segment(sf::Vector2f position)
+        {
+            m_shape.setPosition(position);
+            m_shape.setFillColor(sf::Color::Red);
+        }
 
-    sf::Vector2f getDelta() const
+        void drawIn(sf::RenderWindow& window) const { window.draw(m_shape); }
+
+        sf::Vector2f getPosition() const { return m_shape.getPosition(); }
+
+    private:
+        sf::RectangleShape m_shape{ { Grid::cellSide, Grid::cellSide } };
+    };
+
+    MoveDirection       m_moveDirection{ right };
+    std::deque<Segment> m_segments{};
+
+    [[nodiscard]] sf::Vector2f getDelta() const
     {
         switch (m_moveDirection)
         {
-        case top:    return { 0, -Grid::cellSide };
-        case bottom: return { 0, Grid::cellSide };
-        case left:   return { -Grid::cellSide, 0 };
-        case right:  return { Grid::cellSide, 0 };
+        case top:
+            return { 0, -Grid::cellSide };
+        case bottom:
+            return { 0, Grid::cellSide };
+        case left:
+            return { -Grid::cellSide, 0 };
+        case right:
+            return { Grid::cellSide, 0 };
         default:
             throw std::runtime_error("Unknown enumerator of MoveDirection");
         }
@@ -102,7 +127,7 @@ private:
 
 bool collidesWall(const Snake& snake)
 {
-    const sf::Vector2f pos{ snake.getPosition() };
+    const sf::Vector2f pos{ snake.getHeadPosition() };
     return (pos.x < 0
             || pos.x > Grid::width - Grid::cellSide
             || pos.y < 0
@@ -151,8 +176,7 @@ int main()
             if (event->is<sf::Event::Closed>())
             {
                 Grid::window.close();
-            }
-            else if (const auto* keyPressed{ event->getIf<sf::Event::KeyPressed>() })
+            } else if (const auto* keyPressed{ event->getIf<sf::Event::KeyPressed>() })
             {
                 using enum sf::Keyboard::Scancode;
 
