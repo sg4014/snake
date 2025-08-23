@@ -4,6 +4,11 @@
 #include <iostream>
 #include <stdexcept>
 #include <array>
+#include <utility>
+
+// TODO: spawn a yellow circle in some cell
+// TODO: make the snake grow when it eats a yellow circle
+// TODO: make the snake move faster when it eats a yellow circle
 
 namespace Grid
 {
@@ -64,32 +69,62 @@ public:
 
     void move()
     {
-        sf::Vector2f delta{};
+        m_shape.setPosition(m_shape.getPosition() + getDelta());
+    }
 
-        switch (m_moveDirection)
-        {
-        case top:
-            delta = { 0, -Grid::cellSide };
-            break;
-        case bottom:
-            delta = { 0, Grid::cellSide };
-            break;
-        case left:
-            delta = { -Grid::cellSide, 0 };
-            break;
-        case right:
-            delta = { Grid::cellSide, 0 };
-            break;
-        default:
-            throw std::runtime_error("Unknown enumerator of MoveDirection");
-        }
+    void grow()
+    {
 
-        m_shape.setPosition(m_shape.getPosition() + delta);
+    }
+
+    [[nodiscard]] sf::Vector2f getPosition() const
+    {
+        return m_shape.getPosition();
     }
 
 private:
     MoveDirection      m_moveDirection{ right };
     sf::RectangleShape m_shape{ { Grid::cellSide, Grid::cellSide } };
+
+    sf::Vector2f getDelta() const
+    {
+        switch (m_moveDirection)
+        {
+        case top:    return { 0, -Grid::cellSide };
+        case bottom: return { 0, Grid::cellSide };
+        case left:   return { -Grid::cellSide, 0 };
+        case right:  return { Grid::cellSide, 0 };
+        default:
+            throw std::runtime_error("Unknown enumerator of MoveDirection");
+        }
+    }
+};
+
+bool collidesWall(const Snake& snake)
+{
+    const sf::Vector2f pos{ snake.getPosition() };
+    return (pos.x < 0
+            || pos.x > Grid::width - Grid::cellSide
+            || pos.y < 0
+            || pos.y > Grid::height - Grid::cellSide);
+}
+
+class Food
+{
+public:
+    explicit Food(sf::Vector2f position)
+    {
+        m_shape.setPosition(position);
+        m_shape.setFillColor(sf::Color::Yellow);
+    }
+
+    void drawIn(sf::RenderWindow& window) const
+    {
+        window.draw(m_shape);
+    }
+
+private:
+    sf::CircleShape m_shape{ Grid::cellSide / 2 };
 };
 
 int main()
@@ -104,6 +139,9 @@ int main()
     };
 
     Snake snake{ center };
+    Food  food{ center };
+
+    bool gameOver{ false };
 
     // Game Loop
     while (Grid::window.isOpen())
@@ -141,14 +179,23 @@ int main()
         }
 
         // update screen each s seconds =============
-        Clock::Seconds period {0.2};
+        Clock::Seconds period{ 0.2 };
 
         if (clock.elapsed() < period)
             continue;
 
         Grid::window.clear(sf::Color::Black);
 
-        snake.move();
+        if (!gameOver)
+            snake.move();
+
+        if (!gameOver && collidesWall(snake))
+        {
+            std::cout << "game over\n";
+            gameOver = true;
+        }
+
+        food.drawIn(Grid::window);
         snake.drawIn(Grid::window);
 
         Grid::drawGridLines();
