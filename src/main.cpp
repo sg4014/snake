@@ -1,49 +1,110 @@
+#include <algorithm>
+
+#include "Random.hpp"
 #include "Clock.hpp"
 #include <SFML/Graphics.hpp>
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
 #include <array>
-#include <vector>
+#include <ranges>
 #include <deque>
 
-// TODO: spawn a yellow circle in some cell
-// TODO: make the snake grow when it eats a yellow circle
-// TODO: make the snake move faster when it eats a yellow circle
+
+// TODO: Make it impossible for food to appear inside snake
+// TODO:
 
 namespace Grid
 {
     constexpr int cellSide{ 40 };
     constexpr int rows{ 15 };
     constexpr int columns{ 20 };
-    constexpr int width{ cellSide * columns };
-    constexpr int height{ cellSide * rows };
+    constexpr int pxWidth{ cellSide * columns };
+    constexpr int pxHeight{ cellSide * rows };
 
-    auto window{ sf::RenderWindow(sf::VideoMode({ width, height }), "Snake") };
-
-    void drawGridLines()
+    class Vec2
     {
-        // draw vertical lines
+    public:
+        constexpr Vec2() = default;
+
+        constexpr Vec2(int x, int y)
+            : m_x{ x }, m_y{ y }
+        {
+        }
+
+        constexpr explicit Vec2(const sf::Vector2f& v)
+            : m_x{ static_cast<int>(v.x) / m_basisVectorLength }
+            , m_y{ static_cast<int>(v.y) / m_basisVectorLength }
+        {
+        }
+
+        explicit operator sf::Vector2f() const
+        {
+            return {
+                static_cast<float>(m_x * m_basisVectorLength),
+                static_cast<float>(m_y * m_basisVectorLength)
+            };
+        }
+
+        [[nodiscard]] int getX() const { return m_x; }
+        [[nodiscard]] int getY() const { return m_y; }
+
+        friend Vec2 operator+(const Vec2& v1, const Vec2& v2)
+        {
+            return { v1.getX() + v2.getX(), v1.getY() + v2.getY() };
+        }
+
+        friend bool operator==(const Vec2& v1, const Vec2& v2)
+        {
+            return v1.getX() == v2.getX() && v1.getY() == v2.getY();
+        }
+
+    private:
+        static constexpr int m_basisVectorLength{ cellSide };
+        int                  m_x{};
+        int                  m_y{};
+    };
+
+    auto window{ sf::RenderWindow(sf::VideoMode({ pxWidth, pxHeight }), "Snake") };
+
+    void drawVerticalLines()
+    {
         for (int col{ 1 }; col < columns; ++col)
         {
             const float x{ static_cast<float>(col * cellSide) };
             std::array  line{
                 sf::Vertex{ { x, 0 } },
-                sf::Vertex{ { x, height } }
+                sf::Vertex{ { x, pxHeight } }
             };
             window.draw(line.data(), line.size(), sf::PrimitiveType::Lines);
         }
+    }
 
-        // draw horizontal lines
+    void drawHorizontalLines()
+    {
         for (int row{ 1 }; row < rows; ++row)
         {
             const float y{ static_cast<float>(row * cellSide) };
             std::array  line{
                 sf::Vertex{ { 0, y } },
-                sf::Vertex{ { width, y } }
+                sf::Vertex{ { pxWidth, y } }
             };
             window.draw(line.data(), line.size(), sf::PrimitiveType::Lines);
         }
+    }
+
+    void drawGridLines()
+    {
+        drawVerticalLines();
+        drawHorizontalLines();
+    }
+
+    Vec2 getRandomPos()
+    {
+        return {
+            Random::get(0, columns - 1),
+            Random::get(0, rows - 1)
+        };
     }
 }
 
@@ -52,10 +113,10 @@ class Snake
 public:
     enum MoveDirection
     {
-        right, top, left, bottom,
+        right, up, left, down,
     };
 
-    explicit Snake(sf::Vector2f position)
+    explicit Snake(Grid::Vec2 position)
     {
         m_segments.emplace_front(position);
     }
@@ -66,39 +127,55 @@ public:
             segment.drawIn(window);
     }
 
-    void setMoveDirection(MoveDirection dir) { m_moveDirection = dir; }
+    // Invariant: can't change move direction to the opposite
+    // (right to left, top to bottom, and vice versa)
+    void setMoveDirection(MoveDirection dir)
+    {
+        if (!areOpposite(dir, m_moveDirection))
+            m_moveDirection = dir;
+    }
 
     void move()
     {
-        // 1. Add a new head to the snake
-        m_segments.emplace_front(getHeadPosition() + getDelta());
-        // 2. Delete the last segment of the tail
+        grow();
         m_segments.pop_back();
     }
 
     void grow()
     {
-        //m_segments.push_back(getBasicShape());
+        m_segments.emplace_front(getHeadPosition() + getDelta());
     }
 
-    [[nodiscard]] sf::Vector2f getHeadPosition() const
+    [[nodiscard]] Grid::Vec2 getHeadPosition() const
     {
         return m_segments.front().getPosition();
+    }
+
+    [[nodiscard]] bool collidesItself() const
+    {
+        // check if head collides any other segment
+        return std::ranges::any_of(m_segments.cbegin() + 1, m_segments.cend(),
+            [this](const Segment& segment){
+                return segment.getPosition() == getHeadPosition();
+            });
     }
 
 private:
     class Segment
     {
     public:
-        explicit Segment(sf::Vector2f position)
+        explicit Segment(Grid::Vec2 pos)
         {
-            m_shape.setPosition(position);
+            m_shape.setPosition(static_cast<sf::Vector2f>(pos));
             m_shape.setFillColor(sf::Color::Red);
         }
 
         void drawIn(sf::RenderWindow& window) const { window.draw(m_shape); }
 
-        sf::Vector2f getPosition() const { return m_shape.getPosition(); }
+        Grid::Vec2 getPosition() const
+        {
+            return Grid::Vec2{ m_shape.getPosition() };
+        }
 
     private:
         sf::RectangleShape m_shape{ { Grid::cellSide, Grid::cellSide } };
@@ -107,40 +184,54 @@ private:
     MoveDirection       m_moveDirection{ right };
     std::deque<Segment> m_segments{};
 
-    [[nodiscard]] sf::Vector2f getDelta() const
+    [[nodiscard]] Grid::Vec2 getDelta() const
     {
         switch (m_moveDirection)
         {
-        case top:
-            return { 0, -Grid::cellSide };
-        case bottom:
-            return { 0, Grid::cellSide };
+        case up:
+            return { 0, -1 };
+        case down:
+            return { 0, 1 };
         case left:
-            return { -Grid::cellSide, 0 };
+            return { -1, 0 };
         case right:
-            return { Grid::cellSide, 0 };
+            return { 1, 0 };
         default:
             throw std::runtime_error("Unknown enumerator of MoveDirection");
         }
+    }
+
+    [[nodiscard]]
+    static bool areOpposite(MoveDirection dir1, MoveDirection dir2)
+    {
+        return (dir1 == left && dir2 == right
+                || dir1 == right && dir2 == left
+                || dir1 == up && dir2 == down
+                || dir1 == down && dir2 == up);
     }
 };
 
 bool collidesWall(const Snake& snake)
 {
-    const sf::Vector2f pos{ snake.getHeadPosition() };
-    return (pos.x < 0
-            || pos.x > Grid::width - Grid::cellSide
-            || pos.y < 0
-            || pos.y > Grid::height - Grid::cellSide);
+    const Grid::Vec2 pos{ snake.getHeadPosition() };
+    return (pos.getX() < 0
+            || pos.getX() > Grid::columns - 1
+            || pos.getY() < 0
+            || pos.getY() > Grid::rows - 1);
 }
 
 class Food
 {
 public:
-    explicit Food(sf::Vector2f position)
+    explicit Food(Grid::Vec2 position)
     {
-        m_shape.setPosition(position);
+        m_shape.setPosition(static_cast<sf::Vector2f>(position));
         m_shape.setFillColor(sf::Color::Yellow);
+    }
+
+    [[nodiscard]] Grid::Vec2 getPosition() const
+    {
+        return Grid::Vec2{ m_shape.getPosition() };
     }
 
     void drawIn(sf::RenderWindow& window) const
@@ -149,24 +240,31 @@ public:
     }
 
 private:
-    sf::CircleShape m_shape{ Grid::cellSide / 2 };
+    sf::CircleShape m_shape{ Grid::cellSide / 2.f };
 };
+
+bool ateFood(const Snake& snake, const Food& food)
+{
+    return snake.getHeadPosition() == food.getPosition();
+}
 
 int main()
 {
-    // Clock
+    // ================ INITIALIZE ====================
     Clock clock{};
     clock.start();
 
-    constexpr sf::Vector2f center{
-        Grid::cellSide * (Grid::columns / 2),
-        Grid::cellSide * (Grid::rows / 2)
+    constexpr Grid::Vec2 center{
+        Grid::columns / 2,
+        Grid::rows / 2
     };
 
     Snake snake{ center };
-    Food  food{ center };
+    Food  food{ Grid::getRandomPos() };
+    Clock::Seconds period{ 0.2 };
 
     bool gameOver{ false };
+    // =================================================
 
     // Game Loop
     while (Grid::window.isOpen())
@@ -186,13 +284,13 @@ int main()
                     Grid::window.close();
                     break;
                 case W:
-                    snake.setMoveDirection(Snake::top);
+                    snake.setMoveDirection(Snake::up);
                     break;
                 case A:
                     snake.setMoveDirection(Snake::left);
                     break;
                 case S:
-                    snake.setMoveDirection(Snake::bottom);
+                    snake.setMoveDirection(Snake::down);
                     break;
                 case D:
                     snake.setMoveDirection(Snake::right);
@@ -203,30 +301,40 @@ int main()
         }
 
         // update screen each s seconds =============
-        Clock::Seconds period{ 0.2 };
-
-        if (clock.elapsed() < period)
-            continue;
-
-        Grid::window.clear(sf::Color::Black);
-
-        if (!gameOver)
-            snake.move();
-
-        if (!gameOver && collidesWall(snake))
+        if (clock.elapsed() >= period)
         {
-            std::cout << "game over\n";
-            gameOver = true;
+            Grid::window.clear(sf::Color::Black);
+
+            if (!gameOver)
+            {
+                if (ateFood(snake, food))
+                {
+                    snake.grow();
+                    food = Food{ Grid::getRandomPos() };
+                    constexpr Clock::Seconds delta{0.01};
+                    constexpr Clock::Seconds minPeriod{0.02};
+                    period = std::max(period - delta, minPeriod);
+                } else
+                {
+                    snake.move();
+                }
+
+                if (collidesWall(snake) || snake.collidesItself())
+                {
+                    std::cout << "game over\n";
+                    gameOver = true;
+                }
+            }
+
+            food.drawIn(Grid::window);
+            snake.drawIn(Grid::window);
+
+            Grid::drawGridLines();
+
+            Grid::window.display();
+
+            clock.reset();
+            // ==========================================
         }
-
-        food.drawIn(Grid::window);
-        snake.drawIn(Grid::window);
-
-        Grid::drawGridLines();
-
-        Grid::window.display();
-
-        clock.reset();
-        // ==========================================
     }
 }
