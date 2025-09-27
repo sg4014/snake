@@ -11,9 +11,6 @@
 #include <deque>
 
 
-// TODO: Make it impossible for food to appear inside snake
-// TODO:
-
 namespace Grid
 {
     constexpr int cellSide{ 40 };
